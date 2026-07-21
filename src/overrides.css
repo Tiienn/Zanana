@@ -2,8 +2,12 @@
 .toolbar .view-toggle { grid-column: 1 / -1; justify-self: end; }
 .starting-effects summary { cursor: pointer; font-weight: 700; }
 .starting-effects summary span { color: var(--muted); font-size: 12px; }
+.supplemental-stats { max-width: 1120px; margin: -80px auto 120px; padding: 0 24px; position: relative; z-index: 2; }
+.supplemental-stats .insight-strip { grid-template-columns: repeat(5, 1fr); }
 
 @media (max-width: 720px) {
   .toolbar { grid-template-columns: 1fr 1fr; }
   .toolbar .search-field, .toolbar .view-toggle { grid-column: 1 / -1; width: 100%; }
+  .supplemental-stats { margin-top: -75px; padding: 0 16px; }
+  .supplemental-stats .insight-strip { grid-template-columns: 1fr 1fr; }
 }
