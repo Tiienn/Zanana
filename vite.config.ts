@@ -9,7 +9,7 @@ export default defineConfig({
     includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
     manifest: {
       name: 'High Timeline', short_name: 'Timeline', description: 'A private, self-reported session timeline journal.',
-      theme_color: '#151615', background_color: '#151615', display: 'standalone', start_url: '/', scope: '/', orientation: 'portrait-primary',
+      theme_color: '#141814', background_color: '#141814', display: 'standalone', start_url: '/', scope: '/', orientation: 'portrait-primary',
       icons: [
         { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
         { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
