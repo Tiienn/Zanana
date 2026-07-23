@@ -75,7 +75,9 @@ describe('important interface interactions', () => {
     await user.click(screen.getByRole('button', { name: /Add a missed event/ }))
     await user.selectOptions(screen.getByLabelText('Type'), 'CONTEXT')
     await user.type(screen.getByLabelText('Name or category'), 'Food')
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add event' }))
+    const saveButton = within(screen.getByRole('dialog')).getByRole('button', { name: 'Add event' })
+    expect(saveButton.parentElement).toHaveClass('modal-footer')
+    await user.click(saveButton)
 
     await waitFor(async () => expect((await db.events.where('sessionId').equals('session-test').toArray()).some((event) => event.category === 'Food')).toBe(true))
   })

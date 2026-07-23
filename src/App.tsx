@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { format, parseISO } from 'date-fns'
@@ -25,7 +26,7 @@ function useTick(rate = 10_000) {
   return now
 }
 
-function Modal({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
+function Modal({ title, children, footer, onClose, wide = false }: { title: string; children: ReactNode; footer?: ReactNode; onClose: () => void; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => { ref.current?.querySelector<HTMLElement>('button, input, select, textarea')?.focus() }, [])
   const trap = (event: React.KeyboardEvent) => {
@@ -36,12 +37,13 @@ function Modal({ title, children, onClose, wide = false }: { title: string; chil
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
     if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
   }
-  return <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+  return createPortal(<div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
     <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="modal-title" onKeyDown={trap} className={`modal ${wide ? 'modal-wide' : ''}`}>
       <header className="modal-head"><h2 id="modal-title">{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose}><X /></button></header>
-      {children}
+      <div className="modal-body">{children}</div>
+      {footer && <footer className="modal-footer">{footer}</footer>}
     </div>
-  </div>
+  </div>, document.body)
 }
 
 function Onboarding() {
@@ -258,7 +260,7 @@ function AddMissed({session,events,effects,onClose}:{session:Session;events:Time
     await addEvent(session.id,{kind,state:kind==='STATE_CHANGE'?state:undefined,category:kind==='CONTEXT'||kind==='CONSUME'?value.trim():undefined,note:kind==='NOTE'?value.trim():undefined,activeEffectIds:kind==='EFFECTS_UPDATE'?activeEffects:undefined,occurredAt})
     onClose()
   }
-  return <Modal title="Add missed event" onClose={onClose}><p className="modal-intro">Choose what happened and set its earlier time. The whole timeline recalculates after saving.</p><div className="sheet-form"><label>Type<select value={kind} onChange={e=>{setKind(e.target.value as EventKind);setError('')}}><option value="STATE_CHANGE">State change</option><option value="CONSUME">Consumption</option><option value="CONTEXT">Context</option><option value="EFFECTS_UPDATE">Effects update</option><option value="NOTE">Note</option></select></label>{kind==='STATE_CHANGE'?<label>State<select value={state} onChange={e=>setState(e.target.value as SessionState)}>{STATE_ORDER.map(item=><option value={item} key={item}>{STATE_META[item].label}</option>)}</select></label>:kind==='EFFECTS_UPDATE'?<fieldset><legend>Active effects</legend><div className="effect-grid">{effects.map(effect=><button type="button" aria-pressed={activeEffects.includes(effect.id)} key={effect.id} onClick={()=>setActiveEffects(items=>items.includes(effect.id)?items.filter(id=>id!==effect.id):[...items,effect.id])}>{effect.label}{activeEffects.includes(effect.id)&&<Check/>}</button>)}</div></fieldset>:<label>{kind==='NOTE'?'Note':'Name or category'}{kind==='NOTE'?<textarea value={value} onChange={e=>setValue(e.target.value)}/>:<input value={value} onChange={e=>setValue(e.target.value)} placeholder={kind==='CONSUME'?'e.g. More of the same':'e.g. Food'}/>}</label>}<label>Time<input aria-label="Missed event time" type="datetime-local" min={toLocalInput(session.startedAt)} max={toLocalInput(latestAllowed)} value={time} onChange={e=>{setTime(e.target.value);setError('')}}/></label>{error&&<p className="error-text" role="alert">{error}</p>}<button className="primary full" onClick={save}>Add event</button></div></Modal>
+  return <Modal title="Add missed event" onClose={onClose} footer={<button className="primary full" onClick={save}>Add event</button>}><p className="modal-intro">Choose what happened and set its earlier time. The whole timeline recalculates after saving.</p><div className="sheet-form"><label>Type<select value={kind} onChange={e=>{setKind(e.target.value as EventKind);setError('')}}><option value="STATE_CHANGE">State change</option><option value="CONSUME">Consumption</option><option value="CONTEXT">Context</option><option value="EFFECTS_UPDATE">Effects update</option><option value="NOTE">Note</option></select></label>{kind==='STATE_CHANGE'?<label>State<select value={state} onChange={e=>setState(e.target.value as SessionState)}>{STATE_ORDER.map(item=><option value={item} key={item}>{STATE_META[item].label}</option>)}</select></label>:kind==='EFFECTS_UPDATE'?<fieldset><legend>Active effects</legend><div className="effect-grid">{effects.map(effect=><button type="button" aria-pressed={activeEffects.includes(effect.id)} key={effect.id} onClick={()=>setActiveEffects(items=>items.includes(effect.id)?items.filter(id=>id!==effect.id):[...items,effect.id])}>{effect.label}{activeEffects.includes(effect.id)&&<Check/>}</button>)}</div></fieldset>:<label>{kind==='NOTE'?'Note':'Name or category'}{kind==='NOTE'?<textarea value={value} onChange={e=>setValue(e.target.value)}/>:<input value={value} onChange={e=>setValue(e.target.value)} placeholder={kind==='CONSUME'?'e.g. More of the same':'e.g. Food'}/>}</label>}<label>Time<input aria-label="Missed event time" type="datetime-local" min={toLocalInput(session.startedAt)} max={toLocalInput(latestAllowed)} value={time} onChange={e=>{setTime(e.target.value);setError('')}}/></label>{error&&<p className="error-text" role="alert">{error}</p>}</div></Modal>
 }
 
 function HistoryPage() {
