@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">High Timeline</string>
+    <string name="title_activity_main">High Timeline</string>
+    <string name="package_name">app.hightimeline.mobile</string>
+    <string name="custom_url_scheme">app.hightimeline.mobile</string>
+</resources>

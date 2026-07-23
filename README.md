@@ -41,6 +41,18 @@ npm run preview
 
 Open the preview URL once while online so the service worker can precache the app shell. Then reload it offline using browser developer tools to verify the cached shell. PWA behavior is available in the production build, not the ordinary development server.
 
+## Android APK
+
+The Android project is a thin Capacitor shell around the same local-first web application. It does not add accounts, cloud sync, analytics, or location access.
+
+With Android Studio installed (including its bundled JDK and Android SDK):
+
+```bash
+npm run android:apk
+```
+
+The debug APK is written to `artifacts/android/high-timeline-debug.apk`. The build helper compiles in the operating system’s temporary directory so it also works when the repository lives on an external macOS drive. The APK is intended for direct testing and is signed with the standard Android debug key, not a production release key.
+
 ## Main routes
 
 - `/` — dashboard and active-session resume
