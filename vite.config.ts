@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), VitePWA({
-    registerType: 'prompt',
+    registerType: 'autoUpdate',
     includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
     manifest: {
       name: 'High Timeline', short_name: 'Timeline', description: 'A private, self-reported session timeline journal.',

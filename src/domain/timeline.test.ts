@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildStateIntervals, summarizeSession } from './timeline'
+import { buildStateIntervals, isSessionComplete, summarizeSession } from './timeline'
 import type { Session, SessionState, TimelineEvent } from './types'
 
 const start = Date.parse('2026-01-01T12:00:00Z')
@@ -46,5 +46,15 @@ describe('timeline calculations', () => {
   it('handles equal boundary timestamps deterministically', () => {
     const result = summarizeSession(session(10), [event(2,5,'SUPER_HIGH'), event(1,5,'HIGH'), event(3,10,'NORMAL')])
     expect(result.intervals.map((item) => item.state)).toEqual(['HIGH','SUPER_HIGH','NORMAL']); expect(result.intervals[0].durationMs).toBe(0)
+  })
+  it('ignores a stale end boundary when later events prove the session continued', () => {
+    const stale = session(15)
+    const events = [event(1,0,'NOT_FEELING_IT'), event(2,54,'HIGH')]
+    const result = summarizeSession(stale, events, new Date(at(60)))
+
+    expect(isSessionComplete(stale, events)).toBe(false)
+    expect(result.totalDurationMs).toBe(60 * 60_000)
+    expect(result.timeToFirstHighMs).toBe(54 * 60_000)
+    expect(result.intervals.at(-1)?.end).toBe(Date.parse(at(60)))
   })
 })

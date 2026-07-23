@@ -22,8 +22,22 @@ export const byTime = (a: TimelineEvent, b: TimelineEvent) => {
   return delta || a.sequence - b.sequence || a.id.localeCompare(b.id)
 }
 
+const lastEventTime = (session: Session, events: TimelineEvent[]) =>
+  events.reduce((latest, event) => Math.max(latest, Date.parse(event.occurredAt)), Date.parse(session.startedAt))
+
+export const hasEventsAfterSessionEnd = (session: Session, events: TimelineEvent[]) =>
+  Boolean(session.endedAt && lastEventTime(session, events) > Date.parse(session.endedAt))
+
+export const isSessionComplete = (session: Session, events: TimelineEvent[]) =>
+  Boolean(session.endedAt) && !hasEventsAfterSessionEnd(session, events)
+
+const sessionBoundary = (session: Session, events: TimelineEvent[], now: Date) =>
+  isSessionComplete(session, events)
+    ? Date.parse(session.endedAt as string)
+    : Math.max(Date.parse(session.startedAt), lastEventTime(session, events), now.getTime())
+
 export function buildStateIntervals(session: Session, events: TimelineEvent[], now = new Date()): StateInterval[] {
-  const boundary = session.endedAt ? Date.parse(session.endedAt) : now.getTime()
+  const boundary = sessionBoundary(session, events, now)
   const states = events.filter((event): event is TimelineEvent & { state: SessionState } => event.kind === 'STATE_CHANGE' && Boolean(event.state)).sort(byTime)
   const collapsed = states.filter((event, index) => index === 0 || event.state !== states[index - 1].state)
   return collapsed.map((event, index) => {
@@ -42,7 +56,7 @@ const firstOffset = (session: Session, events: TimelineEvent[], predicate: (even
 
 export function summarizeSession(session: Session, events: TimelineEvent[], now = new Date()): SessionSummary {
   const start = Date.parse(session.startedAt)
-  const end = session.endedAt ? Date.parse(session.endedAt) : now.getTime()
+  const end = sessionBoundary(session, events, now)
   const intervals = buildStateIntervals(session, events, now)
   let peakCount = 0
   let inPeak = false

@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import { SEEDED_EFFECTS } from '../domain/constants'
+import { hasEventsAfterSessionEnd } from '../domain/timeline'
 import type { Backup, EffectDefinition, Session, TimelineEvent } from '../domain/types'
 import { validateBackup } from '../domain/backup'
 
@@ -35,6 +36,15 @@ export function nowIso(advanceTestClock = false): string {
 
 export async function initializeDb() {
   if ((await db.effects.count()) === 0) await db.effects.bulkPut(SEEDED_EFFECTS)
+  const [sessions, events] = await Promise.all([db.sessions.toArray(), db.events.toArray()])
+  const eventsBySession = new Map<string, TimelineEvent[]>()
+  for (const event of events) eventsBySession.set(event.sessionId, [...(eventsBySession.get(event.sessionId) ?? []), event])
+  const staleBoundaries = sessions.filter((session) => hasEventsAfterSessionEnd(session, eventsBySession.get(session.id) ?? []))
+  if (staleBoundaries.length) {
+    await db.transaction('rw', db.sessions, async () => {
+      await Promise.all(staleBoundaries.map((session) => db.sessions.update(session.id, { endedAt: null, updatedAt: nowIso() })))
+    })
+  }
 }
 
 export async function nextSequence(sessionId: string) {
@@ -54,6 +64,25 @@ export async function addEvent(sessionId: string, input: Partial<TimelineEvent> 
     await db.sessions.update(sessionId, { updatedAt: nowIso() })
   })
   return event
+}
+
+export async function reopenSession(sessionId: string) {
+  const session = await db.sessions.get(sessionId)
+  if (!session?.endedAt) return
+  const matchingNormalEvents = await db.events
+    .where('sessionId').equals(sessionId)
+    .filter((event) => event.kind === 'STATE_CHANGE' && event.state === 'NORMAL' && event.occurredAt === session.endedAt)
+    .primaryKeys()
+  await db.transaction('rw', db.sessions, db.events, async () => {
+    await db.events.bulkDelete(matchingNormalEvents)
+    await db.sessions.update(sessionId, {
+      endedAt: null,
+      rating: undefined,
+      wouldUseAgain: undefined,
+      nextDayReminder: undefined,
+      updatedAt: nowIso(),
+    })
+  })
 }
 
 export async function replaceWithBackup(raw: unknown): Promise<Backup> {
