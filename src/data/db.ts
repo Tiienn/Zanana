@@ -1,13 +1,15 @@
 import Dexie, { type EntityTable } from 'dexie'
 import { SEEDED_EFFECTS } from '../domain/constants'
 import { hasEventsAfterSessionEnd } from '../domain/timeline'
-import type { Backup, EffectDefinition, Session, TimelineEvent } from '../domain/types'
+import type { Backup, BookmarkAttachment, EffectDefinition, NextDayReflection, Session, TimelineEvent } from '../domain/types'
 import { validateBackup } from '../domain/backup'
 
 class HighTimelineDb extends Dexie {
   sessions!: EntityTable<Session, 'id'>
   events!: EntityTable<TimelineEvent, 'id'>
   effects!: EntityTable<EffectDefinition, 'id'>
+  attachments!: EntityTable<BookmarkAttachment, 'eventId'>
+  reflections!: EntityTable<NextDayReflection, 'sessionId'>
 
   constructor() {
     super('high-timeline')
@@ -15,6 +17,19 @@ class HighTimelineDb extends Dexie {
       sessions: 'id, startedAt, endedAt, initialMethod, productName, isDemo, updatedAt',
       events: 'id, sessionId, [sessionId+occurredAt], occurredAt, kind, category, sequence',
       effects: 'id, label, group, sentiment, isCustom',
+    })
+    this.version(2).stores({
+      sessions: 'id, startedAt, endedAt, initialMethod, productName, isDemo, updatedAt',
+      events: 'id, sessionId, [sessionId+occurredAt], occurredAt, kind, category, sequence, isBookmarked',
+      effects: 'id, label, group, sentiment, isCustom',
+      attachments: 'eventId, sessionId, updatedAt',
+    })
+    this.version(3).stores({
+      sessions: 'id, startedAt, endedAt, initialMethod, productName, isDemo, updatedAt',
+      events: 'id, sessionId, [sessionId+occurredAt], occurredAt, kind, category, sequence, isBookmarked',
+      effects: 'id, label, group, sentiment, isCustom',
+      attachments: 'eventId, sessionId, updatedAt',
+      reflections: 'sessionId, updatedAt',
     })
   }
 }
@@ -35,8 +50,16 @@ export function nowIso(advanceTestClock = false): string {
 }
 
 export async function initializeDb() {
-  if ((await db.effects.count()) === 0) await db.effects.bulkPut(SEEDED_EFFECTS)
+  const seeded = await db.effects.bulkGet(SEEDED_EFFECTS.map((effect) => effect.id))
+  const missingEffects = SEEDED_EFFECTS.filter((_, index) => !seeded[index])
+  if (missingEffects.length) await db.effects.bulkPut(missingEffects)
   const [sessions, events] = await Promise.all([db.sessions.toArray(), db.events.toArray()])
+  const eventIds = new Set(events.map((event) => event.id))
+  const sessionIds = new Set(sessions.map((session) => session.id))
+  const orphanAttachments = await db.attachments.filter((attachment) => !eventIds.has(attachment.eventId)).primaryKeys()
+  if (orphanAttachments.length) await db.attachments.bulkDelete(orphanAttachments)
+  const orphanReflections = await db.reflections.filter((reflection) => !sessionIds.has(reflection.sessionId)).primaryKeys()
+  if (orphanReflections.length) await db.reflections.bulkDelete(orphanReflections)
   const eventsBySession = new Map<string, TimelineEvent[]>()
   for (const event of events) eventsBySession.set(event.sessionId, [...(eventsBySession.get(event.sessionId) ?? []), event])
   const staleBoundaries = sessions.filter((session) => hasEventsAfterSessionEnd(session, eventsBySession.get(session.id) ?? []))
@@ -80,6 +103,7 @@ export async function reopenSession(sessionId: string) {
       rating: undefined,
       wouldUseAgain: undefined,
       nextDayReminder: undefined,
+      nextDayReflectionDismissedAt: undefined,
       updatedAt: nowIso(),
     })
   })
@@ -87,17 +111,18 @@ export async function reopenSession(sessionId: string) {
 
 export async function replaceWithBackup(raw: unknown): Promise<Backup> {
   const backup = validateBackup(raw)
-  await db.transaction('rw', db.sessions, db.events, db.effects, async () => {
-    await Promise.all([db.sessions.clear(), db.events.clear(), db.effects.clear()])
+  await db.transaction('rw', db.sessions, db.events, db.effects, db.attachments, db.reflections, async () => {
+    await Promise.all([db.sessions.clear(), db.events.clear(), db.effects.clear(), db.attachments.clear(), db.reflections.clear()])
     await db.sessions.bulkAdd(backup.sessions)
     await db.events.bulkAdd(backup.events)
     await db.effects.bulkAdd(backup.effects)
+    await db.reflections.bulkAdd(backup.reflections)
   })
   return backup
 }
 
 export async function clearAll() {
-  await db.transaction('rw', db.sessions, db.events, db.effects, async () => {
-    await db.sessions.clear(); await db.events.clear(); await db.effects.clear(); await db.effects.bulkAdd(SEEDED_EFFECTS)
+  await db.transaction('rw', db.sessions, db.events, db.effects, db.attachments, db.reflections, async () => {
+    await db.sessions.clear(); await db.events.clear(); await db.effects.clear(); await db.attachments.clear(); await db.reflections.clear(); await db.effects.bulkAdd(SEEDED_EFFECTS)
   })
 }

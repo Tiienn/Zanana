@@ -7,9 +7,9 @@ import type { Session, TimelineEvent } from './domain/types'
 
 const iso = (minutesFromNow: number) => new Date(Date.now() + minutesFromNow * 60_000).toISOString()
 
-async function seedSession({ ended = false, laterEvent = false }: { ended?: boolean; laterEvent?: boolean } = {}) {
-  const startedAt = iso(-60)
-  const endedAt = ended ? iso(-45) : null
+async function seedSession({ ended = false, laterEvent = false, endedMinutesAgo = 45 }: { ended?: boolean; laterEvent?: boolean; endedMinutesAgo?: number } = {}) {
+  const startedAt = iso(-Math.max(60,endedMinutesAgo+30))
+  const endedAt = ended ? iso(-endedMinutesAgo) : null
   const session: Session = {
     id: 'session-test',
     startedAt,
@@ -55,12 +55,144 @@ describe('important interface interactions', () => {
     await waitFor(async () => expect((await db.events.where('kind').equals('STATE_CHANGE').toArray()).some((event) => event.state === 'SUPER_HIGH')).toBe(true))
   })
 
+  it('reflects the latest self-report and effects through Zanana without replacing the text', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('ht-onboarded', 'true')
+    await seedSession()
+    history.replaceState({}, '', '/session/session-test/live')
+    render(<App />)
+
+    expect(await screen.findByTestId('zanana-mascot')).toHaveAttribute('data-pose', 'neutral')
+    await user.click(screen.getByRole('button', { name: 'Effects' }))
+    await user.click(screen.getByRole('button', { name: /Happy/ }))
+    await user.click(screen.getByRole('button', { name: 'Save 1 effects' }))
+    expect(await screen.findByLabelText('Active effects: Happy')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('zanana-mascot')).toHaveAttribute('data-pose', 'uplifted'))
+    expect(screen.getByText('Effects saved: Happy')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'High' }))
+    expect(await screen.findByRole('heading', { name: 'High' })).toBeVisible()
+    expect(screen.getByTestId('zanana-mascot')).toHaveAttribute('data-pose', 'high-happy')
+
+    await user.click(screen.getByRole('button', { name: 'Too high' }))
+    const comfort = await screen.findByRole('dialog', { name: 'Comfort mode' })
+    expect(within(comfort).getByText(/does not measure intoxication/i)).toBeVisible()
+    expect(within(comfort).getByText(/4 in · 6 out · no hold/i)).toBeVisible()
+    await user.click(within(comfort).getByRole('button', { name: 'Start breathing' }))
+    expect(within(comfort).getByText('Breathe in gently')).toBeVisible()
+    await user.click(within(comfort).getByRole('button', { name: 'Close' }))
+    expect(await screen.findByRole('heading', { name: 'Too high' })).toBeVisible()
+    expect(screen.getByTestId('zanana-mascot')).toHaveAttribute('data-pose', 'concerned')
+    expect(document.querySelector<HTMLImageElement>('.zanana-image')).toHaveAttribute('alt', '')
+  })
+
+  it('opens Comfort mode manually and records support choices only as context', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('ht-onboarded', 'true')
+    await seedSession()
+    history.replaceState({}, '', '/session/session-test/live')
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Comfort' }))
+    const comfort = screen.getByRole('dialog', { name: 'Comfort mode' })
+    await user.click(within(comfort).getByRole('button', { name: /Add water/ }))
+    await waitFor(async () => expect((await db.events.where('sessionId').equals('session-test').toArray()).some((event) => event.kind === 'CONTEXT' && event.category === 'Water')).toBe(true))
+    expect(screen.getByText('Water added to your timeline')).toBeInTheDocument()
+  })
+
+  it('prioritizes an active timeline on home and keeps its actions in the bottom navigation', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('ht-onboarded', 'true')
+    await seedSession()
+    render(<App />)
+
+    expect(await screen.findByText('Your live timeline')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Not feeling it yet' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Game' })).toHaveAttribute('href', '/game')
+    expect(screen.queryByRole('link', { name: 'Insights' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Timeline' })).toHaveAttribute('href', '/session/session-test/live')
+    await user.click(screen.getByRole('button', { name: 'Add event to active timeline' }))
+    expect(await screen.findByRole('dialog', { name: 'Add to this timeline' })).toBeVisible()
+    expect(screen.getByRole('button', { name: /Mango/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: /Chocolate \/ sweets/ })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /Mango/ }))
+    await waitFor(async()=>expect((await db.events.where('sessionId').equals('session-test').toArray()).some(event=>event.category==='Mango')).toBe(true))
+    expect(await db.effects.get('seed-munchies')).toMatchObject({label:'Munchies',sentiment:'NEUTRAL'})
+  })
+
+  it('earns play-only sunshine and uses it to dress Zanana', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('ht-onboarded', 'true')
+    history.replaceState({}, '', '/game')
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Zanana Pop!' })).toBeVisible()
+    expect(screen.getByText(/no penalties and no sound required/i)).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
+    await user.click(screen.getByRole('button', { name: 'Start round' }))
+    await user.click(screen.getByRole('button', { name: 'Bop Zanana' }))
+    expect(document.querySelector('.game-scoreboard span:first-child strong')).toHaveTextContent('1')
+    for(let count=1;count<5;count+=1)await user.click(screen.getByRole('button',{name:'Bop Zanana'}))
+    expect(document.querySelector('.pop-stage')).toHaveAttribute('data-speed','2')
+    for(let count=5;count<10;count+=1)await user.click(screen.getByRole('button',{name:'Bop Zanana'}))
+    expect(document.querySelector('.pop-stage')).toHaveAttribute('data-speed','3')
+    for(let count=10;count<15;count+=1)await user.click(screen.getByRole('button',{name:'Bop Zanana'}))
+    expect(document.querySelector('.pop-stage')).toHaveAttribute('data-speed','4')
+    expect(screen.getByRole('link', { name: /15 sunshine/ })).toBeVisible()
+    await user.click(within(screen.getByRole('navigation', { name: 'Zanana play spaces' })).getByRole('link', { name: /Zanana’s Room/ }))
+    expect(await screen.findByRole('heading', { name: 'Zanana’s Room' })).toBeVisible()
+    expect(screen.getByLabelText('15 sunshine available')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /Garden crown/ }))
+    expect(screen.getByRole('button', { name: /Garden crown/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('7 sunshine available')).toBeVisible()
+    expect(JSON.parse(localStorage.getItem('zanana-room-v1') || '{}')).toMatchObject({ sunshine: 7, outfit: 'outfit-crown' })
+  })
+
+  it('offers a dedicated end-session button from the live timeline', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('ht-onboarded', 'true')
+    await seedSession()
+    history.replaceState({}, '', '/session/session-test/live')
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /End session/ }))
+    expect(screen.getByRole('dialog', { name: 'End this session?' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'End now' }))
+    expect(await screen.findByRole('link', { name: /Start session/ })).toBeVisible()
+    expect((await db.sessions.get('session-test'))?.endedAt).not.toBeNull()
+    expect(screen.queryByText('Session recap')).not.toBeInTheDocument()
+  })
+
+  it('bookmarks a timeline moment with a local photo and filters History', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('ht-onboarded', 'true')
+    await seedSession({ ended: true })
+    history.replaceState({}, '', '/session/session-test/summary')
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Bookmark consume' }))
+    const dialog=screen.getByRole('dialog', { name: 'Save this moment' })
+    await user.type(within(dialog).getByLabelText(/Label/), 'First quiet moment')
+    const photo=new File(['pineapple-photo'], 'moment.png', { type:'image/png' })
+    await user.upload(within(dialog).getByLabelText('Choose bookmark photo'), photo)
+    await user.click(within(dialog).getByRole('button', { name: 'Save bookmark' }))
+
+    await waitFor(async()=>expect(await db.events.get('event-consume')).toMatchObject({isBookmarked:true,bookmarkLabel:'First quiet moment'}))
+    expect(await db.attachments.get('event-consume')).toMatchObject({photoName:'moment.png'})
+    expect(screen.getByRole('button', { name: 'Edit bookmark for consume' })).toHaveAttribute('aria-pressed','true')
+
+    await user.click(within(screen.getByRole('navigation', { name:'Primary' })).getByRole('link', { name:'History' }))
+    expect(await screen.findByText('1 bookmark across your journal')).toBeVisible()
+    await user.click(screen.getByRole('button', { name:'Show bookmarks only' }))
+    expect(screen.getByText('Test Orchard')).toBeVisible()
+  })
+
   it('repairs an end timestamp when later events prove the session continued', async () => {
     localStorage.setItem('ht-onboarded', 'true')
     await seedSession({ ended: true, laterEvent: true })
     render(<App />)
 
-    expect(await screen.findByText('Resume where you left off')).toBeVisible()
+    expect(await screen.findByRole('link', { name: /Open live timeline/ })).toBeVisible()
     await waitFor(async () => expect((await db.sessions.get('session-test'))?.endedAt).toBeNull())
   })
 
@@ -71,7 +203,7 @@ describe('important interface interactions', () => {
     history.replaceState({}, '', '/session/session-test/live')
     render(<App />)
 
-    await user.click(await screen.findByRole('button', { name: 'Add event' }))
+    await user.click(await screen.findByRole('button', { name: 'Add event to active timeline' }))
     await user.click(screen.getByRole('button', { name: /Add a missed event/ }))
     await user.selectOptions(screen.getByLabelText('Type'), 'CONTEXT')
     await user.type(screen.getByLabelText('Name or category'), 'Food')
@@ -95,5 +227,58 @@ describe('important interface interactions', () => {
     expect(await screen.findByText('How are you now?')).toBeVisible()
     expect((await db.sessions.get('session-test'))?.endedAt).toBeNull()
     expect(await db.events.get('event-normal')).toBeUndefined()
+  })
+
+  it('offers an optional next-day reflection after six hours and shows it in Session Details', async () => {
+    const user=userEvent.setup()
+    localStorage.setItem('ht-onboarded','true')
+    await seedSession({ended:true,endedMinutesAgo:7*60})
+    render(<App/>)
+
+    expect(await screen.findByRole('heading',{name:'Want to remember how today feels?'})).toBeVisible()
+    await user.click(screen.getByRole('button',{name:'Add reflection'}))
+    const dialog=screen.getByRole('dialog',{name:'Add next-day reflection'})
+    await user.click(within(within(dialog).getByRole('group',{name:'How was your sleep?'})).getByRole('button',{name:'Good'}))
+    await user.click(within(within(dialog).getByRole('group',{name:'How was your mood?'})).getByRole('button',{name:'Low'}))
+    await user.type(within(dialog).getByLabelText(/Worth remembering/),'A calm breakfast.')
+    await user.click(within(dialog).getByRole('button',{name:'Save reflection'}))
+
+    await waitFor(async()=>expect(await db.reflections.get('session-test')).toMatchObject({sleep:'GOOD',mood:'LOW',note:'A calm breakfast.'}))
+    expect(screen.queryByRole('heading',{name:'Want to remember how today feels?'})).not.toBeInTheDocument()
+    await user.click(screen.getByText('Test Orchard'))
+    expect(await screen.findByRole('heading',{name:'Next-day reflection'})).toBeVisible()
+    expect(screen.getByText('A calm breakfast.')).toBeVisible()
+    expect(screen.getByRole('button',{name:'Edit reflection'})).toBeVisible()
+  })
+
+  it('permanently skips one prompt while keeping manual reflection available', async () => {
+    const user=userEvent.setup()
+    localStorage.setItem('ht-onboarded','true')
+    await seedSession({ended:true,endedMinutesAgo:7*60})
+    render(<App/>)
+
+    await user.click(await screen.findByRole('button',{name:'Skip this one'}))
+    await waitFor(async()=>expect((await db.sessions.get('session-test'))?.nextDayReflectionDismissedAt).toBeTruthy())
+    expect(screen.queryByRole('heading',{name:'Want to remember how today feels?'})).not.toBeInTheDocument()
+    await user.click(screen.getByText('Test Orchard'))
+    expect(await screen.findByText('Nothing added yet.')).toBeVisible()
+    expect(screen.getByRole('button',{name:'Add reflection'})).toBeVisible()
+  })
+
+  it('lets Settings disable automatic prompts without disabling manual reflections', async () => {
+    const user=userEvent.setup()
+    localStorage.setItem('ht-onboarded','true')
+    await seedSession({ended:true,endedMinutesAgo:7*60})
+    history.replaceState({},'','/settings')
+    render(<App/>)
+
+    const promptToggle=await screen.findByRole('checkbox',{name:'Show automatic reflection prompts'})
+    expect(promptToggle).toBeChecked()
+    await user.click(promptToggle)
+    expect(localStorage.getItem('ht-reflection-prompts')).toBe('off')
+    await user.click(screen.getByRole('link',{name:/Zanana home/}))
+    expect(screen.queryByRole('heading',{name:'Want to remember how today feels?'})).not.toBeInTheDocument()
+    await user.click(screen.getByText('Test Orchard'))
+    expect(await screen.findByRole('button',{name:'Add reflection'})).toBeVisible()
   })
 })

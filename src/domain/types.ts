@@ -2,6 +2,8 @@ export type SessionState = 'NOT_FEELING_IT' | 'FEELING_IT' | 'LIGHT' | 'HIGH' | 
 export type EventKind = 'CONSUME' | 'STATE_CHANGE' | 'EFFECTS_UPDATE' | 'CONTEXT' | 'NOTE'
 export type EffectGroup = 'MIND' | 'MOOD' | 'BODY' | 'CUSTOM'
 export type Sentiment = 'DESIRED' | 'NEUTRAL' | 'UNWANTED'
+export type ReflectionSleep = 'VERY_POOR' | 'POOR' | 'OKAY' | 'GOOD' | 'VERY_GOOD'
+export type ReflectionMood = 'VERY_LOW' | 'LOW' | 'OKAY' | 'GOOD' | 'VERY_GOOD'
 
 export interface Session {
   id: string
@@ -14,6 +16,7 @@ export interface Session {
   rating?: number
   wouldUseAgain?: 'YES' | 'MAYBE' | 'NO'
   nextDayReminder?: boolean
+  nextDayReflectionDismissedAt?: string
   isDemo?: boolean
   createdAt: string
   updatedAt: string
@@ -32,6 +35,18 @@ export interface TimelineEvent {
   amount?: string
   activeEffectIds?: string[]
   note?: string
+  isBookmarked?: boolean
+  bookmarkLabel?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BookmarkAttachment {
+  eventId: string
+  sessionId: string
+  photo?: Blob
+  photoName?: string
+  audio?: Blob
   createdAt: string
   updatedAt: string
 }
@@ -44,10 +59,20 @@ export interface EffectDefinition {
   isCustom: boolean
 }
 
+export interface NextDayReflection {
+  sessionId: string
+  sleep?: ReflectionSleep
+  mood?: ReflectionMood
+  note?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Backup {
-  schemaVersion: 1
+  schemaVersion: 2
   exportedAt: string
   sessions: Session[]
   events: TimelineEvent[]
   effects: EffectDefinition[]
+  reflections: NextDayReflection[]
 }

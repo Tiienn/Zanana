@@ -42,7 +42,7 @@ export async function loadDemoData() {
 export async function clearDemoData() {
   const ids = (await db.sessions.where('isDemo').equals(1).toArray()).map((session) => session.id)
   if (!ids.length) return
-  await db.transaction('rw', db.sessions, db.events, async () => {
-    await db.events.where('sessionId').anyOf(ids).delete(); await db.sessions.bulkDelete(ids)
+  await db.transaction('rw', db.sessions, db.events, db.attachments, db.reflections, async () => {
+    await db.events.where('sessionId').anyOf(ids).delete(); await db.attachments.where('sessionId').anyOf(ids).delete(); await db.reflections.where('sessionId').anyOf(ids).delete(); await db.sessions.bulkDelete(ids)
   })
 }

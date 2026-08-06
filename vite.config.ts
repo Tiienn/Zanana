@@ -8,7 +8,7 @@ export default defineConfig({
     registerType: 'autoUpdate',
     includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
     manifest: {
-      name: 'High Timeline', short_name: 'Timeline', description: 'A private, self-reported session timeline journal.',
+      name: 'Zanana', short_name: 'Zanana', description: 'A private, self-reported session timeline journal with a supportive pineapple companion.',
       theme_color: '#141814', background_color: '#141814', display: 'standalone', start_url: '/', scope: '/', orientation: 'portrait-primary',
       icons: [
         { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
