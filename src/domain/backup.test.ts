@@ -13,5 +13,10 @@ describe('backup validation', () => {
   it('rejects unsupported versions', () => expect(() => validateBackup({ schemaVersion: 9, sessions:[], events:[], effects:[] })).toThrow(/version/))
   it('rejects orphaned events', () => expect(() => validateBackup({ schemaVersion:1, sessions:[], events:[event], effects:[] })).toThrow(/missing session/))
   it('rejects orphaned reflections', () => expect(() => validateBackup({ schemaVersion:2, sessions:[], events:[], effects:[], reflections:[reflection] })).toThrow(/missing session/))
+  it('rejects invalid optional reflection fields before import', () => {
+    expect(() => validateBackup({ schemaVersion:2, sessions:[session], events:[event], effects:[effect], reflections:[{...reflection,mood:{label:'Good'}}] })).toThrow(/reflection record is malformed/)
+    expect(() => validateBackup({ schemaVersion:2, sessions:[session], events:[event], effects:[effect], reflections:[{...reflection,sleep:'EXCELLENT'}] })).toThrow(/reflection record is malformed/)
+    expect(() => validateBackup({ schemaVersion:2, sessions:[session], events:[event], effects:[effect], reflections:[{...reflection,note:42}] })).toThrow(/reflection record is malformed/)
+  })
   it('rejects malformed records without partial acceptance', () => expect(() => validateBackup({ schemaVersion:1, sessions:[{ id:'s' }], events:[], effects:[] })).toThrow(/malformed/))
 })

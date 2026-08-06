@@ -339,4 +339,31 @@ describe('important interface interactions', () => {
     expect(JSON.parse(localStorage.getItem('zanana-room-v1')||'{}')).toMatchObject({sunshine:6})
     expect(screen.getByText(/Sunshine comes from completing the game—not from sessions/i)).toBeVisible()
   })
+
+  it('cancels a pending mismatch when Fruit Pairs is mixed again', async () => {
+    const user=userEvent.setup()
+    localStorage.setItem('ht-onboarded','true')
+    history.replaceState({},'','/game/memory')
+    render(<App/>)
+
+    await screen.findByRole('heading',{name:'Fruit Pairs'})
+    const mango=document.querySelector<HTMLButtonElement>('.memory-card[data-pair="mango"]')!
+    const pineapple=document.querySelector<HTMLButtonElement>('.memory-card[data-pair="pineapple"]')!
+    await user.click(mango);await user.click(pineapple)
+    await user.click(screen.getByRole('button',{name:/Mix again/}))
+    const firstCard=document.querySelector<HTMLButtonElement>('.memory-card')!
+    await user.click(firstCard)
+
+    await new Promise((resolve)=>window.setTimeout(resolve,750))
+    expect(firstCard).toHaveAttribute('aria-pressed','true')
+  })
+
+  it('explains both play-only ways to earn Room sunshine', async () => {
+    localStorage.setItem('ht-onboarded','true')
+    history.replaceState({},'','/game/room')
+    render(<App/>)
+
+    expect(await screen.findByText(/Pop earns one sunshine per bop/)).toHaveTextContent(/Fruit Pairs earns six per completed board/)
+    expect(screen.getByRole('link',{name:/Play games/})).toBeVisible()
+  })
 })
