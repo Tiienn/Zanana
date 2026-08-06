@@ -281,4 +281,62 @@ describe('important interface interactions', () => {
     await user.click(screen.getByText('Test Orchard'))
     expect(await screen.findByRole('button',{name:'Add reflection'})).toBeVisible()
   })
+
+  it('keeps companion check-ins optional, inline, and snoozable', async () => {
+    const user=userEvent.setup()
+    localStorage.setItem('ht-onboarded','true')
+    render(<App/>)
+
+    expect(await screen.findByRole('heading',{name:'Want to note how you feel?'})).toBeVisible()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button',{name:'Snooze 2 hours'}))
+    expect(screen.queryByRole('heading',{name:'Want to note how you feel?'})).not.toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem('zanana-check-ins-v1')||'{}')).toMatchObject({enabled:true})
+    expect(JSON.parse(localStorage.getItem('zanana-check-ins-v1')||'{}').nextAt).toBeGreaterThan(Date.now()+100*60_000)
+  })
+
+  it('never interrupts an active session with a companion check-in', async () => {
+    localStorage.setItem('ht-onboarded','true')
+    await seedSession()
+    render(<App/>)
+
+    expect(await screen.findByText('Your live timeline')).toBeVisible()
+    expect(screen.queryByRole('heading',{name:'Want to note how you feel?'})).not.toBeInTheDocument()
+  })
+
+  it('shows context patterns only with thresholded raw counts', async () => {
+    localStorage.setItem('ht-onboarded','true')
+    const sessions:Session[]=[];const events:TimelineEvent[]=[]
+    for(let index=1;index<=3;index+=1){
+      const sessionId=`pattern-${index}`;const startedAt=iso(-index*300);const contextAt=new Date(Date.parse(startedAt)+20*60_000).toISOString();const effectAt=new Date(Date.parse(startedAt)+30*60_000).toISOString();const endedAt=new Date(Date.parse(startedAt)+120*60_000).toISOString()
+      sessions.push({id:sessionId,startedAt,endedAt,initialMethod:'Joint',createdAt:startedAt,updatedAt:endedAt})
+      events.push({id:`context-${index}`,sessionId,occurredAt:contextAt,sequence:1,kind:'CONTEXT',category:'Mango',createdAt:contextAt,updatedAt:contextAt})
+      if(index<3)events.push({id:`effect-${index}`,sessionId,occurredAt:effectAt,sequence:2,kind:'EFFECTS_UPDATE',activeEffectIds:['seed-happy'],createdAt:effectAt,updatedAt:effectAt})
+    }
+    await db.sessions.bulkAdd(sessions);await db.events.bulkAdd(events)
+    history.replaceState({},'','/insights')
+    render(<App/>)
+
+    expect(await screen.findByRole('heading',{name:'Context patterns'})).toBeVisible()
+    expect(screen.getByText('3 completed sessions')).toBeVisible()
+    expect(screen.getByText('2 of those sessions')).toBeVisible()
+    expect(screen.getByText(/not evidence of cause or a stronger effect/i)).toBeVisible()
+  })
+
+  it('completes Fruit Pairs without a timer and earns play-only sunshine', async () => {
+    const user=userEvent.setup()
+    localStorage.setItem('ht-onboarded','true')
+    history.replaceState({},'','/game/memory')
+    render(<App/>)
+
+    expect(await screen.findByRole('heading',{name:'Fruit Pairs'})).toBeVisible()
+    expect(screen.getByText(/there is no timer, penalty, or sound/i)).toBeVisible()
+    for(const pair of ['mango','pineapple','strawberry','orange','watermelon','grape']){
+      const cards=[...document.querySelectorAll<HTMLButtonElement>(`.memory-card[data-pair="${pair}"]`)]
+      await user.click(cards[0]);await user.click(cards[1])
+    }
+    expect(await screen.findByText('Every pair found!')).toBeVisible()
+    expect(JSON.parse(localStorage.getItem('zanana-room-v1')||'{}')).toMatchObject({sunshine:6})
+    expect(screen.getByText(/Sunshine comes from completing the game—not from sessions/i)).toBeVisible()
+  })
 })
